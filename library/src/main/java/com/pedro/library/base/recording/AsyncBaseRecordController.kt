@@ -31,12 +31,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileDescriptor
 import java.nio.ByteBuffer
 import kotlin.concurrent.Volatile
 import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Record async to avoid block the thread used to send frames to protocol module.
@@ -182,6 +185,7 @@ abstract class AsyncBaseRecordController : RecordController {
       val channel = muxerChannel ?: return@launch
       for (frame in channel) {
         try {
+          if (!isActive) break
           onWriteFrame(frame)
         } finally {
           bufferPool.release(frame.data)
@@ -204,7 +208,7 @@ abstract class AsyncBaseRecordController : RecordController {
     muxerChannel?.close()
     muxerChannel = null
     muxerJob?.cancel()
-    runBlocking { muxerJob?.join() }
+    runBlocking { withTimeoutOrNull(1000.milliseconds) { muxerJob?.join() } }
     bufferPool.clear()
     recordStatus = RecordController.Status.STOPPED
     clearTimestamp()
